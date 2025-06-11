@@ -49,7 +49,6 @@ protected:
     std::vector<TraceEntry> trace_events;
     size_t cur_event_id = 0;
     uint64_t integer_reg_array[32] = {0};
-    uint64_t float_reg_array[32] = {0};
     uint64_t pc = 0;
     size_t hart_id = 0;
     const std::unordered_map<std::string, uint64_t*> name_to_reg_map = {
@@ -85,44 +84,17 @@ protected:
         {"x29", integer_reg_array + 29},
         {"x30", integer_reg_array + 30},
         {"x31", integer_reg_array + 31},
-        {"f0", float_reg_array},
-        {"f1", float_reg_array + 1},
-        {"f2", float_reg_array + 2},
-        {"f3", float_reg_array + 3},
-        {"f4", float_reg_array + 4},
-        {"f5", float_reg_array + 5},
-        {"f6", float_reg_array + 6},
-        {"f7", float_reg_array + 7},
-        {"f8", float_reg_array + 8},
-        {"f9", float_reg_array + 9},
-        {"f10", float_reg_array + 10},
-        {"f11", float_reg_array + 11},
-        {"f12", float_reg_array + 12},
-        {"f13", float_reg_array + 13},
-        {"f14", float_reg_array + 14},
-        {"f15", float_reg_array + 15},
-        {"f16", float_reg_array + 16},
-        {"f17", float_reg_array + 17},
-        {"f18", float_reg_array + 18},
-        {"f19", float_reg_array + 19},
-        {"f20", float_reg_array + 20},
-        {"f21", float_reg_array + 21},
-        {"f22", float_reg_array + 22},
-        {"f23", float_reg_array + 23},
-        {"f24", float_reg_array + 24},
-        {"f25", float_reg_array + 25},
-        {"f26", float_reg_array + 26},
-        {"f27", float_reg_array + 27},
-        {"f28", float_reg_array + 28},
-        {"f29", float_reg_array + 29},
-        {"f30", float_reg_array + 30},
-        {"f31", float_reg_array + 31}
+        {"pc", &pc}
     };
 public:
     RISCV64Model(std::istream& trace_input);
     virtual void set_state_pc(uint64_t address) override;
     virtual bool step_forward() override;
     virtual bool step_back() override;
-    virtual uint64_t read_register(size_t index) override;
-    virtual uint64_t read_register(const std::string& name) override;
+    virtual uint64_t read_register(size_t index) const override;
+    virtual uint64_t read_register(const std::string& name) const override;
+    virtual std::map<std::string, uint64_t> get_all_regs() const override;
+    virtual std::string description() const override {
+        return "Basic RV64 model";
+    }
 };
