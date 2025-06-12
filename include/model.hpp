@@ -6,7 +6,7 @@
 
 class NoSuchPcException : public std::runtime_error {
 public:
-    NoSuchPcException(uint64_t pc) : runtime_error("No record for pc=" + pc) {}
+    NoSuchPcException(uint64_t pc) : runtime_error(std::string("No record for pc=") + std::to_string(pc)) {}
 };
 
 class NoSuchRegisterException : public std::runtime_error {

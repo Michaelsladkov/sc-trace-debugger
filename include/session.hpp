@@ -18,15 +18,10 @@ public:
 };
 
 class DebugSession {
-    std::vector<std::unique_ptr<IModel>> cpu_array;
+    std::vector<std::shared_ptr<IModel>> cpu_array;
     std::set<uint64_t> breakpoint_addresses;
     size_t active_hart = 0;
 public:
-    DebugSession(const DebugSession& other) = delete;
-    DebugSession(DebugSession&& other) = default;
-    DebugSession() = default;
-    DebugSession& operator=(const DebugSession& other) = delete;
-    DebugSession& operator=(DebugSession&& other) = default;
     const IModel* operator->() const {
         return cpu_array[active_hart].get();
     }

@@ -51,41 +51,6 @@ protected:
     uint64_t integer_reg_array[32] = {0};
     uint64_t pc = 0;
     size_t hart_id = 0;
-    const std::unordered_map<std::string, uint64_t*> name_to_reg_map = {
-        {"x0", integer_reg_array},
-        {"x1", integer_reg_array + 1},
-        {"x2", integer_reg_array + 2},
-        {"x3", integer_reg_array + 3},
-        {"x4", integer_reg_array + 4},
-        {"x5", integer_reg_array + 5},
-        {"x6", integer_reg_array + 6},
-        {"x7", integer_reg_array + 7},
-        {"x8", integer_reg_array + 8},
-        {"x9", integer_reg_array + 9},
-        {"x10", integer_reg_array + 10},
-        {"x11", integer_reg_array + 11},
-        {"x12", integer_reg_array + 12},
-        {"x13", integer_reg_array + 13},
-        {"x14", integer_reg_array + 14},
-        {"x15", integer_reg_array + 15},
-        {"x16", integer_reg_array + 16},
-        {"x17", integer_reg_array + 17},
-        {"x18", integer_reg_array + 18},
-        {"x19", integer_reg_array + 19},
-        {"x20", integer_reg_array + 20},
-        {"x21", integer_reg_array + 21},
-        {"x22", integer_reg_array + 22},
-        {"x23", integer_reg_array + 23},
-        {"x24", integer_reg_array + 24},
-        {"x25", integer_reg_array + 25},
-        {"x26", integer_reg_array + 26},
-        {"x27", integer_reg_array + 27},
-        {"x28", integer_reg_array + 28},
-        {"x29", integer_reg_array + 29},
-        {"x30", integer_reg_array + 30},
-        {"x31", integer_reg_array + 31},
-        {"pc", &pc}
-    };
 public:
     RISCV64Model(std::istream& trace_input);
     virtual void set_state_pc(uint64_t address) override;

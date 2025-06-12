@@ -8,12 +8,12 @@ namespace {
         if (p.args.size() == 0) {
             auto res = p.session->get_all_regs();
             for(auto& [name, value] : res) {
-                p.out << name << "=" << value << std::endl;
+                p.out << name << "=" << std::hex << "0x" << value << std::dec << std::endl;
             }
             return;
         }
         auto res = p.session->read_register(p.args);
-        p.out << res << std::endl; 
+        p.out << std::hex << "0x" << res << std::dec << std::endl; 
     }
 
     void hart_command(Executor::CommandParams p) {
@@ -55,5 +55,5 @@ void Executor::execute_command(const std::string& command) {
         ++args_pos;
     }
     std::string command_args = args_pos == std::string::npos ? "" : command.substr(args_pos);
-    commands[command_type](Executor::CommandParams(command_args, out, err, session));
+    commands[command_type](Executor::CommandParams(command_args, *out, *err, session));
 }

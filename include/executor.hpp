@@ -12,8 +12,8 @@ public:
 
 class Executor {
     DebugSession session;
-    std::ostream& out = std::cout;
-    std::ostream& err = std::cerr;
+    std::ostream* out = &std::cout;
+    std::ostream* err = &std::cerr;
 public:
     struct CommandParams {
         const std::string& args;
@@ -30,6 +30,9 @@ public:
           session(session_) {}
     };
     using CommandObject = std::function<void(CommandParams)>;
+    Executor() = default;
     Executor(DebugSession&& debug_session) : session(std::move(debug_session)) {}
+    Executor(const Executor& other) : session(other.session), out(other.out), err(other.err) {}
+    Executor& operator=(const Executor& other) = default;
     void execute_command(const std::string& command);
 };

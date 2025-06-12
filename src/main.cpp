@@ -1,6 +1,7 @@
 #include "session.hpp"
 #include "executor.hpp"
 #include <iostream>
+#include <optional>
 
 int main(int argc, char* argv[]) {
     if (argc < 2) {
@@ -9,11 +10,11 @@ int main(int argc, char* argv[]) {
     }
 
     DebugSessionFactory factory;
-    std::unique_ptr<Executor> exec;
+    Executor exec;
 
     try {
         DebugSession session = factory.create_session(argv[1]);
-        exec = std::make_unique<Executor>(std::move(session));
+        exec = Executor(std::move(session));
     } 
     catch (const std::exception& err) {
         std::cerr << err.what() << std::endl;
@@ -24,7 +25,7 @@ int main(int argc, char* argv[]) {
     while (std::getline(std::cin, input)) {
         if (input.empty()) continue;        
         try {
-            exec->execute_command(input);
+            exec.execute_command(input);
         } 
         catch (const std::runtime_error& e) {
             std::cerr << e.what() << std::endl;

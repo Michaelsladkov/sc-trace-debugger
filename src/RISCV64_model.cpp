@@ -61,8 +61,8 @@ RISCV64Model::RISCV64Model(std::istream& trace_input) {
             std::cerr << "Error on reading line " << line_number << std::endl;
         }
     }
-    pc = 0;
     cur_event_id = 0;
+    pc = trace_events[cur_event_id].pc;
     for (size_t i = 0; i < 32; ++i) {
         integer_reg_array[i] = 0;
     }
@@ -116,7 +116,7 @@ bool RISCV64Model::step_back() {
 }
 
 uint64_t RISCV64Model::read_register(size_t index) const {
-    if (index >= sizeof(integer_reg_array)) {
+    if (index >= 32) {
         std::string reg_name = "x" + std::to_string(index);
         throw NoSuchRegisterException(reg_name);
     }
@@ -124,17 +124,20 @@ uint64_t RISCV64Model::read_register(size_t index) const {
 }
 
 uint64_t RISCV64Model::read_register(const std::string& name) const {
-    try {
-        return *(name_to_reg_map.at(name));
-    } catch (std::out_of_range& e) {
+    if (name.starts_with("pc")) {
+        return pc;
+    }
+    if (name[0] != 'x') {
         throw NoSuchRegisterException(name);
     }
+    size_t index = std::stoull(name.c_str() + 1);
+    return integer_reg_array[index];
 }
 
 std::map<std::string, uint64_t> RISCV64Model::get_all_regs() const {
     std::map<std::string, uint64_t> res;
-    for (const auto& [name, value_ptr] : name_to_reg_map) {
-        res.insert({name, *value_ptr});
+    for (size_t i = 0; i < 32; ++i) {
+        res.insert({"x" + std::to_string(i), integer_reg_array[i]});
     }
     return res;
 }
