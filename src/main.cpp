@@ -22,6 +22,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::string input;
+    std::cout << '>';
     while (std::getline(std::cin, input)) {
         if (input.empty()) continue;        
         try {
@@ -30,6 +31,7 @@ int main(int argc, char* argv[]) {
         catch (const std::runtime_error& e) {
             std::cerr << e.what() << std::endl;
         }
+        std::cout << '>';
     }
 
     return 0;

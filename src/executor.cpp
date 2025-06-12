@@ -4,6 +4,14 @@
 #include <unordered_map>
 
 namespace {
+    uint64_t parse_value_maybe_hex(const std::string& arg) {
+        if (arg.starts_with("0x")) {
+            return std::stoull(arg.c_str() + 2, nullptr, 16);
+        } else {
+            return std::stoull(arg.c_str());
+        }
+    }
+
     void reg_command(Executor::CommandParams p) {
         if (p.args.size() == 0) {
             auto res = p.session->get_all_regs();
@@ -34,11 +42,54 @@ namespace {
         p.session->step_forward();
     }
 
+    void step_back_command(Executor::CommandParams p) {
+        p.session->step_back();
+    }
+
+    void run_till_command(Executor::CommandParams p) {
+        uint64_t target_pc = parse_value_maybe_hex(p.args);
+        p.session->set_state_pc(target_pc);
+    }
+
+    void add_break_point_command(Executor::CommandParams p) {
+        uint64_t target_pc = parse_value_maybe_hex(p.args);
+        p.session.add_break_point(target_pc);
+    }
+
+    void remove_break_point_command(Executor::CommandParams p) {
+        uint64_t target_pc = parse_value_maybe_hex(p.args);
+        p.session.remove_break_point(target_pc);
+    }
+
+    void resume_command(Executor::CommandParams p) {
+        std::optional<size_t> ret;
+        if (p.args.size() == 0) {
+            ret = p.session.run_all();
+        } else {
+            size_t hart_id = std::stoull(p.args);
+            p.session.set_active_hart(hart_id);
+            ret = p.session.run();
+        }
+        if (ret) {
+            p.out << "hart " << ret.value() << " reached break point\n";
+        } else {
+            p.out << "all runned harts reached end of trace\n";
+        }
+    }
+
     std::unordered_map<std::string, Executor::CommandObject> commands = {
         {"reg", reg_command},
         {"hart", hart_command},
         {"step", step_command},
-        {"s", step_command}
+        {"s", step_command},
+        {"step_back", step_back_command},
+        {"sb", step_back_command},
+        {"run-till", run_till_command},
+        {"rt", run_till_command},
+        {"bp", add_break_point_command},
+        {"rbp", remove_break_point_command},
+        {"resume", resume_command},
+        {"run", resume_command}
     };
 }
 
@@ -55,5 +106,8 @@ void Executor::execute_command(const std::string& command) {
         ++args_pos;
     }
     std::string command_args = args_pos == std::string::npos ? "" : command.substr(args_pos);
+    if (!commands.contains(command_type)) {
+        throw UnsupportedCommandException(command_type);
+    }
     commands[command_type](Executor::CommandParams(command_args, *out, *err, session));
 }

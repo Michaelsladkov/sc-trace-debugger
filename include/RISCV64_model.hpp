@@ -51,15 +51,17 @@ protected:
     uint64_t integer_reg_array[32] = {0};
     uint64_t pc = 0;
     size_t hart_id = 0;
+    std::string trace_name;
 public:
-    RISCV64Model(std::istream& trace_input);
+    RISCV64Model(std::istream& trace_input, const std::string& filename);
     virtual void set_state_pc(uint64_t address) override;
     virtual bool step_forward() override;
     virtual bool step_back() override;
     virtual uint64_t read_register(size_t index) const override;
+    virtual uint64_t read_pc() const override;
     virtual uint64_t read_register(const std::string& name) const override;
-    virtual std::map<std::string, uint64_t> get_all_regs() const override;
+    virtual std::vector<std::pair<std::string, uint64_t>> get_all_regs() const override;
     virtual std::string description() const override {
-        return "Basic RV64 model";
+        return "Basic RV64 model (" + trace_name + ')';
     }
 };

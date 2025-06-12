@@ -3,6 +3,7 @@
 #include "model.hpp"
 
 #include <memory>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <vector>
@@ -42,6 +43,32 @@ public:
     }
     void remove_break_point(uint64_t addr) noexcept {
         breakpoint_addresses.erase(addr);
+    }
+    std::optional<size_t> run() {
+        while (!breakpoint_addresses.contains(cpu_array[active_hart]->read_pc())) {
+            if (!cpu_array[active_hart]->step_forward()) {
+                return active_hart;
+                break;
+            }
+        }
+        return std::nullopt;
+    }
+    std::optional<size_t> run_all() {
+        bool need_stop = false;
+        std::optional<size_t> ret = std::nullopt;
+        while (!need_stop) {
+            for (size_t i = 0; i < cpu_array.size(); ++i) {
+                auto& cpu = cpu_array[i];
+                cpu->step_forward();
+                bool reached_break_point = breakpoint_addresses.contains(cpu->read_pc());
+                need_stop |= reached_break_point;
+                if (reached_break_point) {
+                    ret = i;
+                    break;
+                }
+            }
+        }
+        return ret;
     }
     const auto& get_harts() {
         return cpu_array;

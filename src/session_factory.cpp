@@ -2,11 +2,12 @@
 
 #include "RISCV64_model.hpp"
 
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
 #include <memory>
-#include <vector>
 #include <string>
-#include <filesystem>
+#include <vector>
 
 #include <iostream>
 
@@ -32,11 +33,13 @@ namespace {
 
 DebugSession DebugSessionFactory::create_session(const std::string& trace_dir_path) {
     auto traces = get_trace_log_files(trace_dir_path);
+    std::sort(traces.begin(), traces.end());
     DebugSession res;
     for (const auto& trace : traces) {
         std::cerr << "processing " << trace << " of total " << traces.size() << " traces\n";
         std::ifstream trace_stream(trace);
-        res.cpu_array.emplace_back(std::make_unique<RISCV64Model>(RISCV64Model(trace_stream)));
+        std::string trace_name = trace.substr(trace.rfind('/') + 1);
+        res.cpu_array.emplace_back(std::make_unique<RISCV64Model>(RISCV64Model(trace_stream, trace_name)));
     }
     return res;
 }

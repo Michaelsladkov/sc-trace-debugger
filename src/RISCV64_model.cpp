@@ -38,7 +38,7 @@ TraceLine::TraceLine(const std::string& line) {
     }
 }
 
-RISCV64Model::RISCV64Model(std::istream& trace_input) {
+RISCV64Model::RISCV64Model(std::istream& trace_input, const std::string& filename) : trace_name(filename) {
     size_t line_number = 0;
     for (std::string line; trace_input.good(), ++line_number;) {
         std::getline(trace_input, line);
@@ -69,7 +69,6 @@ RISCV64Model::RISCV64Model(std::istream& trace_input) {
 }
 
 void RISCV64Model::set_state_pc(uint64_t address) {
-    cur_event_id = 0;
     while(trace_events[cur_event_id].pc != address) {
         step_forward();
         if (cur_event_id >= trace_events.size()) {
@@ -98,17 +97,18 @@ bool RISCV64Model::step_back() {
     if (cur_event_id == 0) {
         return false;
     }
+    const auto& next_event = trace_events[cur_event_id];
     --cur_event_id;
-    const auto& event = trace_events[cur_event_id];
-    pc = event.pc;
-    if (event.changed_reg.has_value()) {
-        size_t i = cur_event_id - 1;
-        while (trace_events[i].changed_reg != event.changed_reg && i > 0) {
+    const auto& cur_event = trace_events[cur_event_id];
+    pc = cur_event.pc;
+    if (next_event.changed_reg.has_value()) {
+        size_t i = cur_event_id;
+        while (trace_events[i].changed_reg != next_event.changed_reg && i > 0) {
             --i;
         }
         uint64_t old_value = i == 0 ? 0 : trace_events[i].new_reg_val.value();
-        if (event.changed_reg->type == RegType::INT) {
-            integer_reg_array[event.changed_reg->index] = old_value;
+        if (next_event.changed_reg->type == RegType::INT) {
+            integer_reg_array[next_event.changed_reg->index] = old_value;
             return true;
         }
     }
@@ -123,6 +123,10 @@ uint64_t RISCV64Model::read_register(size_t index) const {
     return integer_reg_array[index];
 }
 
+uint64_t RISCV64Model::read_pc() const {
+    return pc;
+}
+
 uint64_t RISCV64Model::read_register(const std::string& name) const {
     if (name.starts_with("pc")) {
         return pc;
@@ -134,10 +138,10 @@ uint64_t RISCV64Model::read_register(const std::string& name) const {
     return integer_reg_array[index];
 }
 
-std::map<std::string, uint64_t> RISCV64Model::get_all_regs() const {
-    std::map<std::string, uint64_t> res;
+std::vector<std::pair<std::string, uint64_t>> RISCV64Model::get_all_regs() const {
+    std::vector<std::pair<std::string, uint64_t>> res;
     for (size_t i = 0; i < 32; ++i) {
-        res.insert({"x" + std::to_string(i), integer_reg_array[i]});
+        res.push_back({"x" + std::to_string(i), integer_reg_array[i]});
     }
     return res;
 }
