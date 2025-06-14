@@ -56,11 +56,12 @@ RISCV64Model::RISCV64Model(std::istream& trace_input, const std::string& filenam
             TraceLine trace_line(line);
             trace_events.emplace_back(trace_line);
         } catch (std::exception& e) {
-            std::cerr << "Error on reading line " << line_number << ": " << e.what() << std::endl;
+            std::cerr << "Error (" << e.what() << ") on reading line " << line_number << ": " << line << std::endl;
         } catch (...) {
-            std::cerr << "Error on reading line " << line_number << std::endl;
+            std::cerr << "Error on reading line " << line_number << ": " << line << std::endl;
         }
     }
+    std::cerr << "parsed " << trace_events.size() << " trace events\n";
     cur_event_id = 0;
     pc = trace_events[cur_event_id].pc;
     for (size_t i = 0; i < 32; ++i) {

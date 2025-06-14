@@ -52,13 +52,54 @@ namespace {
     }
 
     void add_break_point_command(Executor::CommandParams p) {
-        uint64_t target_pc = parse_value_maybe_hex(p.args);
+        uint64_t target_pc;
+        try {
+            if (p.args[0] >= '0' && p.args[0] <= '9') {
+                target_pc = parse_value_maybe_hex(p.args);
+            } else {
+                size_t colon_pos = p.args.find(':');
+                if (colon_pos == std::string::npos) {
+                    p.err << "unsupported breakpoint target\n";
+                    return;
+                } else {
+                    std::string filename = p.args.substr(0, colon_pos);
+                    size_t line_num = std::stoull(p.args.c_str() + colon_pos + 1);
+                    SourceLineSpec spec(filename, line_num, 0);
+                    target_pc = p.debug_info_provider.get_pc_by_line(spec)[0];
+                }
+            }
+        } catch(std::runtime_error& e) {
+            p.err << "error occured: " << e.what() << std::endl;
+        }
         p.session.add_break_point(target_pc);
+        p.out << "break point set for " << std::hex << "0x" << target_pc << std::dec << std::endl;
     }
 
     void remove_break_point_command(Executor::CommandParams p) {
-        uint64_t target_pc = parse_value_maybe_hex(p.args);
-        p.session.remove_break_point(target_pc);
+        uint64_t target_pc;
+        try {
+            if (p.args[0] >= '0' && p.args[0] <= '9') {
+                target_pc = parse_value_maybe_hex(p.args);
+            } else {
+                size_t colon_pos = p.args.find(':');
+                if (colon_pos == std::string::npos) {
+                    p.err << "unsupported breakpoint target\n";
+                    return;
+                } else {
+                    std::string filename = p.args.substr(0, colon_pos);
+                    size_t line_num = std::stoull(p.args.c_str() + colon_pos + 1);
+                    SourceLineSpec spec(filename, line_num, 0);
+                    target_pc = p.debug_info_provider.get_pc_by_line(spec)[0];
+                }
+            }
+        } catch(std::runtime_error& e) {
+            p.err << "error occured: " << e.what() << std::endl;
+        }
+        if (p.session.remove_break_point(target_pc)) {
+            p.out << "break point set for " << std::hex << "0x" << target_pc << std::dec << std::endl;
+        } else {
+            p.out << "no break point found\n";
+        }
     }
 
     void resume_command(Executor::CommandParams p) {
@@ -77,6 +118,21 @@ namespace {
         }
     }
 
+    void line_command(Executor::CommandParams p) {
+        uint64_t pc;
+        if (p.args.size() == 0) {
+            pc = p.session->read_pc(); 
+        } else {
+            pc = parse_value_maybe_hex(p.args);
+        }
+        try {
+            auto res = p.debug_info_provider.get_line_by_pc(pc);
+            p.out << res << std::endl;
+        } catch(NoSuchLineException& e) {
+            p.out << e.what() << std::endl;
+        }
+    }
+
     std::unordered_map<std::string, Executor::CommandObject> commands = {
         {"reg", reg_command},
         {"hart", hart_command},
@@ -89,7 +145,9 @@ namespace {
         {"bp", add_break_point_command},
         {"rbp", remove_break_point_command},
         {"resume", resume_command},
-        {"run", resume_command}
+        {"run", resume_command},
+        {"line", line_command},
+        {"l", line_command}
     };
 }
 
@@ -109,5 +167,5 @@ void Executor::execute_command(const std::string& command) {
     if (!commands.contains(command_type)) {
         throw UnsupportedCommandException(command_type);
     }
-    commands[command_type](Executor::CommandParams(command_args, *out, *err, session));
+    commands[command_type](Executor::CommandParams(command_args, *out, *err, session, debug_info));
 }

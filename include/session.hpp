@@ -41,8 +41,8 @@ public:
     void add_break_point(uint64_t addr) noexcept {
         breakpoint_addresses.insert(addr);
     }
-    void remove_break_point(uint64_t addr) noexcept {
-        breakpoint_addresses.erase(addr);
+    bool remove_break_point(uint64_t addr) noexcept {
+        return breakpoint_addresses.erase(addr) > 0;
     }
     std::optional<size_t> run() {
         while (!breakpoint_addresses.contains(cpu_array[active_hart]->read_pc())) {
