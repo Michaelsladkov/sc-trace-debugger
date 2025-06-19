@@ -27,3 +27,11 @@ public:
     virtual std::string description() const = 0;
     virtual ~IModel() = default;
 };
+
+class IModelWithMemory : public IModel {
+public:
+    virtual uint64_t read_memory_dword(uint64_t address) const = 0;
+    virtual uint32_t read_memory_word(uint64_t address) const = 0;
+    virtual uint16_t read_memory_hword(uint64_t address) const = 0;
+    virtual uint8_t  read_memory_byte(uint64_t address) const = 0;
+};
