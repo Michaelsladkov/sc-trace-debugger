@@ -57,15 +57,19 @@ public:
         bool need_stop = false;
         std::optional<size_t> ret = std::nullopt;
         while (!need_stop) {
+            bool cpu_alive = false;
             for (size_t i = 0; i < cpu_array.size(); ++i) {
                 auto& cpu = cpu_array[i];
-                cpu->step_forward();
+                cpu_alive |= cpu->step_forward();
                 bool reached_break_point = breakpoint_addresses.contains(cpu->read_pc());
                 need_stop |= reached_break_point;
                 if (reached_break_point) {
                     ret = i;
                     break;
                 }
+            }
+            if (!cpu_alive) {
+                break;
             }
         }
         return ret;

@@ -39,7 +39,9 @@ DebugSession DebugSessionFactory::create_session(const std::string& trace_dir_pa
         std::cerr << "processing " << trace << " of total " << traces.size() << " traces\n";
         std::ifstream trace_stream(trace);
         std::string trace_name = trace.substr(trace.rfind('/') + 1);
-        res.cpu_array.emplace_back(std::make_unique<RISCV64Model>(RISCV64Model(trace_stream, trace_name)));
+        auto cpu = std::make_unique<RISCV64Model>();
+        cpu->init(trace_stream, trace_name);
+        res.cpu_array.emplace_back(std::move(cpu));
     }
     return res;
 }

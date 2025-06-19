@@ -38,7 +38,8 @@ TraceLine::TraceLine(const std::string& line) {
     }
 }
 
-RISCV64Model::RISCV64Model(std::istream& trace_input, const std::string& filename) : trace_name(filename) {
+void RISCV64Model::init(std::istream& trace_input, const std::string& filename) {
+    trace_name = filename;
     size_t line_number = 0;
     for (std::string line; trace_input.good(), ++line_number;) {
         std::getline(trace_input, line);
@@ -54,14 +55,14 @@ RISCV64Model::RISCV64Model(std::istream& trace_input, const std::string& filenam
         }
         try {
             TraceLine trace_line(line);
-            trace_events.emplace_back(trace_line);
+            trace_events.emplace_back(trace_line, *this);
+            step_forward();
         } catch (std::exception& e) {
             std::cerr << "Error (" << e.what() << ") on reading line " << line_number << ": " << line << std::endl;
         } catch (...) {
             std::cerr << "Error on reading line " << line_number << ": " << line << std::endl;
         }
     }
-    std::cerr << "parsed " << trace_events.size() << " trace events\n";
     cur_event_id = 0;
     pc = trace_events[cur_event_id].pc;
     for (size_t i = 0; i < 32; ++i) {
@@ -82,15 +83,14 @@ bool RISCV64Model::step_forward() {
     if (cur_event_id == trace_events.size()) {
         return false;
     }
-    ++cur_event_id;
     const auto& event = trace_events[cur_event_id];
     pc = event.pc;
     if (event.changed_reg.has_value()) {
-        if (event.changed_reg->type == RegType::INT) {
-            integer_reg_array[event.changed_reg->index] = event.new_reg_val.value();
-            return true;
+        if (event.changed_reg->reg.type == RegType::INT) {
+            integer_reg_array[event.changed_reg->reg.index] = event.changed_reg->val;
         }
     }
+    ++cur_event_id;
     return true;
 }
 
@@ -98,21 +98,15 @@ bool RISCV64Model::step_back() {
     if (cur_event_id == 0) {
         return false;
     }
-    const auto& next_event = trace_events[cur_event_id];
     --cur_event_id;
     const auto& cur_event = trace_events[cur_event_id];
-    pc = cur_event.pc;
-    if (next_event.changed_reg.has_value()) {
-        size_t i = cur_event_id;
-        while (trace_events[i].changed_reg != next_event.changed_reg && i > 0) {
-            --i;
-        }
-        uint64_t old_value = i == 0 ? 0 : trace_events[i].new_reg_val.value();
-        if (next_event.changed_reg->type == RegType::INT) {
-            integer_reg_array[next_event.changed_reg->index] = old_value;
-            return true;
-        }
+    if (cur_event.changed_reg.has_value()) {
+        uint64_t old_value = cur_event.changed_reg->prev;
+        size_t changed_reg_index = cur_event.changed_reg->reg.index;
+        integer_reg_array[changed_reg_index] = old_value;
     }
+    const auto& prev_event = trace_events[cur_event_id - 1];
+    pc = prev_event.pc;
     return true;
 }
 

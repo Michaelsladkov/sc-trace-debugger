@@ -21,6 +21,16 @@ struct RegisterDescription {
     }
 };
 
+struct RegisterUpdateEvent {
+    RegisterDescription reg;
+    uint64_t val;
+    uint64_t prev;
+    RegisterUpdateEvent(const RegisterDescription& descr, uint64_t new_val, uint64_t prev_val = 0) :
+        reg(descr),
+        val(new_val),
+        prev(prev_val) {}
+};
+
 struct TraceLine {
     uint64_t time;
     int rsv1;
@@ -35,17 +45,35 @@ struct TraceLine {
 };
 
 struct TraceEntry {
+    uint64_t time;
     uint64_t pc;
-    std::optional<RegisterDescription> changed_reg = std::nullopt;
-    std::optional<uint64_t> new_reg_val = std::nullopt;
-    TraceEntry(const TraceLine& line) : 
+    uint32_t instr;
+    std::optional<RegisterUpdateEvent> changed_reg = std::nullopt;
+    TraceEntry(const TraceLine& line, const IModel& model) :
+        time(line.time), 
         pc(line.cur_pc),
-        changed_reg(line.changed_reg),
-        new_reg_val(line.new_reg_val) {}
+        instr(line.instr) {
+            if (line.changed_reg) {
+                changed_reg = RegisterUpdateEvent(
+                    line.changed_reg.value(),
+                    line.new_reg_val.value(),
+                    model.read_register(line.changed_reg.value().index)
+                    );                                             
+            }
+        }
 };
+
+struct MemoryEntry {
+    uint64_t value = 0;
+    uint64_t modification_time = 0;
+    MemoryEntry(uint64_t val, uint64_t time) : value(val), modification_time(time) {}
+};
+
+using Memory = std::unordered_map<uint64_t, std::pair<MemoryEntry, MemoryEntry>>;
 
 class RISCV64Model : public IModel {
 protected:
+    virtual void init(std::istream& trace_input, const std::string& filename);
     std::vector<TraceEntry> trace_events;
     size_t cur_event_id = 0;
     uint64_t integer_reg_array[32] = {0};
@@ -53,7 +81,6 @@ protected:
     size_t hart_id = 0;
     std::string trace_name;
 public:
-    RISCV64Model(std::istream& trace_input, const std::string& filename);
     virtual void set_state_pc(uint64_t address) override;
     virtual bool step_forward() override;
     virtual bool step_back() override;
@@ -64,4 +91,5 @@ public:
     virtual std::string description() const override {
         return "Basic RV64 model (" + trace_name + ')';
     }
+    friend class DebugSessionFactory;
 };
