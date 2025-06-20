@@ -16,8 +16,16 @@ file(GLOB_RECURSE TESTS_CPP_FILES CONFIGURE_DEPENDS tests/*.cpp)
 set(SRC_CPP_FILES_NO_CLI ${SRC_CPP_FILES})
 list(REMOVE_ITEM SRC_CPP_FILES_NO_CLI "${CMAKE_SOURCE_DIR}/src/main.cpp")
 
+find_library(ELF_LIBRARY 
+    NAMES elf libelf
+    PATHS /usr/lib /usr/local/lib
+    REQUIRED
+)
+
 add_executable(${PROJECT_NAME} ${SRC_CPP_FILES})
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_link_libraries(${PROJECT_NAME} PRIVATE dwarf)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${ELF_LIBRARY})
 
 FetchContent_Declare(
     googletest
@@ -33,3 +41,5 @@ target_include_directories(tests PUBLIC ${CMAKE_SOURCE_DIR}/include)
 target_link_libraries(tests PRIVATE gtest_main)
 target_compile_options(tests PRIVATE -fsanitize=address -fsanitize=undefined)
 target_link_options(tests PRIVATE -fsanitize=address -fsanitize=undefined)
+target_link_libraries(tests PRIVATE dwarf)
+target_link_libraries(tests PRIVATE ${ELF_LIBRARY})
