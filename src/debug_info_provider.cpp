@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <vector>
+#include <libdwarf/dwarf.h>
 
 #include <iostream>
 
@@ -12,7 +13,7 @@ namespace {
     std::pair<LineToAddrMap, AddrToLineMap> build_maps(Dwarf_Debug dbg, Dwarf_Error err, const std::string common_prefix) {
         LineToAddrMap line_addr_ret;
         AddrToLineMap addr_line_ret;
-        Dwarf_Bool      is_info;
+        Dwarf_Bool      is_info = true;
         Dwarf_Unsigned  cu_header_length;
         Dwarf_Half      version_stamp;
         Dwarf_Off       abbrev_offset;
@@ -69,7 +70,6 @@ namespace {
                     src_name = src_name.substr(prefix_begin);
                 }
                 SourceLineSpec spec(src_name, line_num, column);
-                // std::cerr << spec << "->" << std::hex << addr << std::dec << std::endl;
                 addr_line_ret.emplace(addr, spec);
                 spec.column = 0;
                 line_addr_ret[spec].emplace_back(addr);
@@ -81,6 +81,104 @@ namespace {
         std::cerr << "dwarf cu processed: " << cu_cnt << std::endl;
         return std::make_pair(line_addr_ret, addr_line_ret);
     }
+
+    struct InternalTypeInfo {
+        std::string name;
+        size_t size;
+    };
+
+    std::string get_type_name(Dwarf_Die type_die, Dwarf_Debug dbg, Dwarf_Error err) {
+        char* type_name;
+        std::string ret;
+        if (dwarf_diename(type_die, &type_name, &err) == DW_DLV_OK) {
+            ret = type_name;
+            dwarf_dealloc(dbg, type_name, DW_DLA_STRING);
+        } else {
+            throw DwarfException("failed to read type name");
+        }
+        return ret;
+    }
+
+    ssize_t get_type_size(Dwarf_Die type_die, Dwarf_Debug dbg, Dwarf_Error err) {
+        Dwarf_Attribute size_attr;
+        ssize_t ret;
+        if (dwarf_attr(type_die, DW_AT_byte_size, &size_attr, &err) == DW_DLV_OK) {
+            Dwarf_Unsigned size;
+            if (dwarf_formudata(size_attr, &size, &err) == DW_DLV_OK) {
+                ret = size;
+            } else {
+                dwarf_dealloc(dbg, size_attr, DW_DLA_ATTR);
+                throw DwarfException("failed to read size value");
+            }
+            dwarf_dealloc(dbg, size_attr, DW_DLA_ATTR);
+        } else {
+            throw DwarfException("failed to read size attribute");
+        }
+        return ret;
+    }
+
+    ssize_t get_typedef_size_recursive(Dwarf_Die type_die, Dwarf_Debug dbg, Dwarf_Error err) {
+        size_t res = -1;
+        Dwarf_Attribute type_attr = nullptr;
+        if (dwarf_attr(type_die, DW_AT_type, &type_attr, &err) == DW_DLV_OK) {
+            Dwarf_Off type_ref;
+            if (dwarf_global_formref(type_attr, &type_ref, &err) == DW_DLV_OK) {
+                Dwarf_Die hidden_type_die;
+                if (dwarf_offdie_b(dbg, type_ref, true, &hidden_type_die, &err) != DW_DLV_OK) {
+                    dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+                    throw DwarfException("failed to read hidden type DIE");
+                }
+                Dwarf_Half hidden_type_tag;
+                dwarf_tag(hidden_type_die, &hidden_type_tag, &err);
+                if (hidden_type_tag == DW_TAG_typedef) {
+                    res = get_typedef_size_recursive(hidden_type_die, dbg, err);
+                } else {
+                    res = get_type_size(hidden_type_die, dbg, err);
+                }
+            }
+        } else {
+            throw DwarfException("failed to read type attribute");
+        }
+        dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+        return res;
+    }
+
+    InternalTypeInfo get_type_info(Dwarf_Die type_die, Dwarf_Debug dbg, Dwarf_Error err) {
+        Dwarf_Half type_tag;
+        dwarf_tag(type_die, &type_tag, &err);
+        std::cerr << "Type tag: " << type_tag << std::endl;
+        InternalTypeInfo ret;
+        if (type_tag == DW_TAG_base_type) {
+            ret.name = get_type_name(type_die, dbg, err);
+            ret.size = get_type_size(type_die, dbg, err);
+        }
+        if (type_tag == DW_TAG_typedef) {
+            ret.name = get_type_name(type_die, dbg, err);
+            ret.size = get_typedef_size_recursive(type_die, dbg, err);
+        }
+        if (type_tag == DW_TAG_const_type) {
+            std::cerr << "Processing constant\n";
+            Dwarf_Attribute type_attr = nullptr;
+            if (dwarf_attr(type_die, DW_AT_type, &type_attr, &err) == DW_DLV_OK) {
+                Dwarf_Off type_ref;
+                if (dwarf_global_formref(type_attr, &type_ref, &err) == DW_DLV_OK) {
+                    Dwarf_Die const_type_die;
+                    if (dwarf_offdie_b(dbg, type_ref, true, &const_type_die, &err) != DW_DLV_OK) {
+                        dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+                        std::cerr << "failed to read hidden type DIE\n";
+                    }
+                    Dwarf_Half const_type_tag;
+                    dwarf_tag(const_type_die, &const_type_tag, &err);
+                    std::cerr << "const type tag: " << const_type_tag << std::endl;
+                }
+            } else {
+                std::cerr << "failed to read type attr\n";
+            }
+            dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+        }
+        return ret;
+    }
+
 }
 
 DebugInfoProvider::DebugInfoProvider(const std::string& elf_path, const std::string& common_prefix) : elf_file_path(elf_path) {
@@ -99,7 +197,6 @@ DebugInfoProvider::DebugInfoProvider(const std::string& elf_path, const std::str
     }
 
     int res = dwarf_elf_init(elf_handler, DW_DLC_READ, nullptr, nullptr, &dbg, &err);
-    std::cerr << res << std::endl;
     
     if (res != DW_DLV_OK) {
         elf_end(elf_handler);
@@ -140,6 +237,79 @@ const std::vector<uint64_t>& DebugInfoProvider::get_pc_by_line(const SourceLineS
         throw NoPcInfoException(line_spec);
     }
     return res->second;
+}
+
+void visit_die(Dwarf_Die d, Dwarf_Debug dbg, Dwarf_Error err) {
+    char *die_text;
+    dwarf_diename(d, &die_text, &err);
+    Dwarf_Half tag;
+    if (dwarf_tag(d, &tag, &err) != DW_DLV_OK) {
+        return;
+    }
+    if (tag == DW_TAG_variable || tag == DW_TAG_formal_parameter) {
+        if (!die_text) {
+            std::cerr << "TEXT_ERROR" << std::endl;
+        } else {
+            std::cerr << "die text: " << die_text << " tag: " << tag << std::endl;
+        }
+        Dwarf_Attribute type_attr;
+        if (dwarf_attr(d, DW_AT_type, &type_attr, &err) == DW_DLV_OK) {
+            Dwarf_Off type_ref;
+            if (dwarf_global_formref(type_attr, &type_ref, &err) == DW_DLV_OK) {
+                Dwarf_Die type_die;
+                if (dwarf_offdie_b(dbg, type_ref, true, &type_die, &err) != DW_DLV_OK) {
+                    std::cerr << "failed to get type node\n";
+                }
+                get_type_info(type_die, dbg, err);
+                dwarf_dealloc(dbg, type_die, DW_DLA_DIE);
+            }
+            dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+        }
+    }
+
+    Dwarf_Die next;
+    if (dwarf_child(d, &next, &err) != DW_DLV_OK) {
+        return;
+    }
+    visit_die(next, dbg, err);
+    Dwarf_Die sib;
+    while(dwarf_siblingof_b(dbg, next, true, &sib, &err) == DW_DLV_OK) {
+        visit_die(sib, dbg, err);
+        next = sib;
+    }
+}
+
+std::vector<VariableInfo> DebugInfoProvider::get_available_variables(uint64_t pc) const {
+    std::vector<VariableInfo> res;
+
+    Dwarf_Bool      is_info = true;
+    Dwarf_Unsigned  cu_header_length;
+    Dwarf_Half      version_stamp;
+    Dwarf_Off       abbrev_offset;
+    Dwarf_Half      address_size;
+    Dwarf_Half      length_size;
+    Dwarf_Half      extension_size;
+    Dwarf_Sig8      type_signature;
+    Dwarf_Unsigned  typeoffset;
+    Dwarf_Unsigned  next_cu_header_offset;
+    Dwarf_Half      header_cu_type;
+    size_t cu_cnt = 0;
+    while (dwarf_next_cu_header_d(dbg, is_info, &cu_header_length, 
+                                  &version_stamp, &abbrev_offset, 
+                                  &address_size, &length_size,
+                                  &extension_size, &type_signature,
+                                  &typeoffset, &next_cu_header_offset,
+                                  &header_cu_type, &err) == DW_DLV_OK) {
+        
+        Dwarf_Die cu_die;
+        if (dwarf_siblingof_b(dbg, nullptr, is_info, &cu_die, &err) != DW_DLV_OK) {
+            continue;
+        }
+        visit_die(cu_die, dbg, err);
+        ++cu_cnt;
+    }
+    std::cerr << "processed cu num: " << cu_cnt << std::endl;
+    return res;
 }
 
 DebugInfoProvider::~DebugInfoProvider() {

@@ -55,6 +55,27 @@ public:
     NoSuchLineException(uint64_t pc) : DwarfException("No line corresponds to pc " + std::to_string(pc)) {}
 };
 
+enum class LocationType {
+    MEMORY,
+    REGISTER,
+    FRAME_OFFSET
+};
+
+struct VariableLocation {
+    LocationType type;
+    union {
+        Dwarf_Addr address;
+        Dwarf_Unsigned reg_num;
+        Dwarf_Signed offset;
+    };
+};
+
+struct VariableInfo {
+    std::string name;
+    std::string type_name;
+    VariableLocation location;
+    Dwarf_Unsigned size;
+};
 
 inline std::ostream& operator<<(std::ostream& stream, const SourceLineSpec& l) {
     stream << l.source_path << ':' << l.line << ':' << l.column;
@@ -63,6 +84,7 @@ inline std::ostream& operator<<(std::ostream& stream, const SourceLineSpec& l) {
 
 using LineToAddrMap = std::unordered_map<SourceLineSpec, std::vector<uint64_t>, SourceLineSpec::Hasher>;
 using AddrToLineMap = std::unordered_map<uint64_t, SourceLineSpec>;
+using TypeSizeMap = std::unordered_map<std::string, size_t>;
 
 class DebugInfoProvider {
 private:
@@ -70,9 +92,10 @@ private:
     int elf_fd = -1;
     Elf* elf_handler = nullptr;
     Dwarf_Debug dbg = nullptr;
-    Dwarf_Error err = nullptr;
+    mutable Dwarf_Error err = nullptr;
     LineToAddrMap line_addr_map;
     AddrToLineMap addr_line_map;
+    TypeSizeMap type_size_map;
 public:
     DebugInfoProvider() = default;
     explicit DebugInfoProvider(const std::string& elf_path, const std::string& common_prefix = "");
@@ -84,5 +107,6 @@ public:
     }
     const SourceLineSpec& get_line_by_pc(uint64_t pc) const;
     const std::vector<uint64_t>& get_pc_by_line(const SourceLineSpec& line_spec) const;
+    std::vector<VariableInfo> get_available_variables(uint64_t pc) const;
     virtual ~DebugInfoProvider();
 };

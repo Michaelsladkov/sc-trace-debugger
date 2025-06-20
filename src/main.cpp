@@ -16,6 +16,7 @@ int main(int argc, char* argv[]) {
     try {
         DebugSession session = factory.create_session(argv[1]);
         DebugInfoProvider provider(argv[2], "tests/");
+        provider.get_available_variables(0);
         exec = std::make_unique<Executor>(std::move(session), std::move(provider));
     } 
     catch (const std::exception& err) {
