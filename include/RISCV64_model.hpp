@@ -1,7 +1,9 @@
 #pragma once
 
 #include "model.hpp"
+#include "session_memory.hpp"
 
+#include <memory>
 #include <optional>
 #include <unordered_map>
 #include <vector>
@@ -75,6 +77,7 @@ class RISCV64Model : public IModel {
 protected:
     virtual void init(std::istream& trace_input, const std::string& filename);
     std::vector<TraceEntry> trace_events;
+    std::shared_ptr<Memory> memory;
     size_t cur_event_id = 0;
     uint64_t integer_reg_array[32] = {0};
     uint64_t pc = 0;
@@ -86,22 +89,11 @@ public:
     virtual bool step_back() override;
     virtual uint64_t read_register(size_t index) const override;
     virtual uint64_t read_pc() const override;
+    virtual uint64_t cur_time() const override;
     virtual uint64_t read_register(const std::string& name) const override;
     virtual std::vector<std::pair<std::string, uint64_t>> get_all_regs() const override;
     virtual std::string description() const override {
         return "Basic RV64 model (" + trace_name + ')';
     }
     friend class DebugSessionFactory;
-};
-
-class RISCV64ModelWithMemory : public IModelWithMemory, public RISCV64Model {
-protected:
-    Memory memory;
-public:
-    virtual bool step_forward() override;
-    virtual bool step_back() override;
-    virtual uint64_t read_memory_dword(uint64_t address) const override;
-    virtual uint32_t read_memory_word(uint64_t address) const override;
-    virtual uint16_t read_memory_hword(uint64_t address) const override;
-    virtual uint8_t  read_memory_byte(uint64_t address) const override;
 };

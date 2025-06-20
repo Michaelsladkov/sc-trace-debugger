@@ -122,6 +122,13 @@ uint64_t RISCV64Model::read_pc() const {
     return pc;
 }
 
+uint64_t RISCV64Model::cur_time() const {
+    if (cur_event_id < trace_events.size()) {
+        return trace_events.at(cur_event_id).time;
+    }
+    return trace_events.at(cur_event_id - 1).time;
+}
+
 uint64_t RISCV64Model::read_register(const std::string& name) const {
     if (name.starts_with("pc")) {
         return pc;
