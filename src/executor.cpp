@@ -70,6 +70,7 @@ namespace {
             }
         } catch(std::runtime_error& e) {
             p.err << "error occured: " << e.what() << std::endl;
+            return;
         }
         p.session.add_break_point(target_pc);
         p.out << "break point set for " << std::hex << "0x" << target_pc << std::dec << std::endl;
@@ -94,6 +95,7 @@ namespace {
             }
         } catch(std::runtime_error& e) {
             p.err << "error occured: " << e.what() << std::endl;
+            return;
         }
         if (p.session.remove_break_point(target_pc)) {
             p.out << "break point set for " << std::hex << "0x" << target_pc << std::dec << std::endl;
