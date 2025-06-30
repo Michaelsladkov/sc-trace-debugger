@@ -65,13 +65,16 @@ struct TraceEntry {
         }
 };
 
-struct MemoryEntry {
-    uint64_t value = 0;
-    uint64_t modification_time = 0;
-    MemoryEntry(uint64_t val, uint64_t time) : value(val), modification_time(time) {}
-};
 
-using Memory = std::unordered_map<uint64_t, std::pair<MemoryEntry, MemoryEntry>>;
+class MisalignedAddressException : public std::runtime_error {
+public:
+    MisalignedAddressException(uint64_t address, uint16_t size) :
+        runtime_error(
+            std::string("Address ") +
+            std::to_string(address) +
+            " not aligned for size " +
+            std::to_string(size)) {}
+};
 
 class RISCV64Model : public IModel {
 protected:
@@ -95,5 +98,9 @@ public:
     virtual std::string description() const override {
         return "Basic RV64 model (" + trace_name + ')';
     }
+    virtual uint64_t read_memory_dword(uint64_t address) const override;
+    virtual uint32_t read_memory_word(uint64_t address) const override;
+    virtual uint16_t read_memory_hword(uint64_t address) const override;
+    virtual uint8_t read_memory_byte(uint64_t address) const override;
     friend class DebugSessionFactory;
 };

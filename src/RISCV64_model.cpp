@@ -4,6 +4,8 @@
 #include <map>
 #include <sstream>
 
+#include "RISCV64_decode.hpp"
+
 TraceLine::TraceLine(const std::string& line) {
     std::stringstream view(line);
     view >> time;
@@ -147,3 +149,65 @@ std::vector<std::pair<std::string, uint64_t>> RISCV64Model::get_all_regs() const
     }
     return res;
 }
+
+uint64_t RISCV64Model::read_memory_dword(uint64_t address) const {
+    for (size_t i = cur_event_id; i > 0; --i) {
+        const auto& event = trace_events.at(i);
+        auto decoded = RISCV64Decode::decode(event.instr);
+        if (decoded.type == RISCV64Decode::InstructionType::UNSUPPORTED) {
+            continue;
+        }
+        uint64_t accessed_address;
+        uint8_t data_reg_index;
+        if (decoded.type == RISCV64Decode::InstructionType::LOAD) {
+            auto addr_reg = decoded.content.loadContent.rs1Index;
+            data_reg_index = decoded.content.loadContent.rdIndex;
+            accessed_address = (integer_reg_array[addr_reg] + decoded.content.loadContent.offset) & ~0x7ULL;
+        }
+        if (decoded.type == RISCV64Decode::InstructionType::STORE) {
+            auto addr_reg = decoded.content.storeContent.rs1Index;
+            data_reg_index = decoded.content.storeContent.rs2Index;
+            accessed_address = (integer_reg_array[addr_reg] + decoded.content.storeContent.offset) & ~0x7ULL;
+        }
+        if (accessed_address != address) {
+            continue;
+        }
+        if (decoded.type == RISCV64Decode::InstructionType::LOAD) {
+            return event.changed_reg->val;
+        }
+        for (size_t j = i; j > 0; --j) {
+            const auto& event = trace_events.at(j);
+            if (!event.changed_reg) {
+                continue;
+            }
+            if (event.changed_reg->reg.index != data_reg_index) {
+                continue;
+            }
+            return event.changed_reg->val;
+        }
+    }
+    return 0;
+};
+
+uint32_t RISCV64Model::read_memory_word(uint64_t address) const {
+    if (address & 0x3) throw MisalignedAddressException(address, 4);
+    const uint64_t base_address = address & ~0x7ULL;
+    const uint64_t offset = address - base_address;
+    const uint64_t value = read_memory_dword(base_address);
+    return (value >> (offset * 8)) & 0xFFFFFFFF;
+};
+
+uint16_t RISCV64Model::read_memory_hword(uint64_t address) const {
+    if (address & 0x1) throw MisalignedAddressException(address, 2);
+    const uint64_t base_address = address & ~0x7ULL;
+    const uint64_t offset = address - base_address;
+    const uint64_t value = read_memory_dword(base_address);
+    return (value >> (offset * 8)) & 0xFFFF;
+};
+
+uint8_t RISCV64Model::read_memory_byte(uint64_t address) const {
+    const uint64_t base_address = address & ~0x7ULL;
+    const uint64_t offset = address - base_address;
+    const uint64_t value = read_memory_dword(base_address);
+    return (value >> (offset * 8)) & 0xFF;
+};

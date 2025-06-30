@@ -138,20 +138,22 @@ namespace {
     void variables_command(Executor::CommandParams p) {
         const uint64_t pc = p.session->read_pc();
         auto variables = p.debug_info_provider.get_available_variables(pc);
-        const uint64_t sp = p.session->read_register("x2");
+        const uint64_t bp = p.session->read_register("x4");
         for (auto& v : variables) {
             uint64_t addr;
             if (v.location.type == LocationType::MEMORY) {
                 addr = v.location.value;
             } else if (v.location.type == LocationType::FRAME_OFFSET) {
-                addr = sp + v.location.value;
+                addr = bp + v.location.value;
             } else {
                 addr = -1;
             }
-            p.out << v.name << ": " << v.type_name 
+            p.out << v.name 
                 << " (" << std::hex
                 << addr
-                << ")" << std::dec << std::endl;
+                << ")" << std::dec
+                << ": " << v.type_name
+                << " = " << p.session->read_memory_dword(addr) << std::endl;
         }
     }
 

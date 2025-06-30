@@ -19,17 +19,6 @@ public:
     SessionCreationError() : std::runtime_error("Failed to create session check trace directory") {}
 };
 
-
-class MisalignedAddressException : public std::runtime_error {
-public:
-    MisalignedAddressException(uint64_t address, uint16_t size) :
-        runtime_error(
-            std::string("Address ") +
-            std::to_string(address) +
-            " not aligned for size " +
-            std::to_string(size)) {}
-};
-
 class DebugSession {
     std::vector<std::shared_ptr<IModel>> cpu_array;
     std::set<uint64_t> breakpoint_addresses;
@@ -90,33 +79,6 @@ public:
     const auto& get_harts() {
         return cpu_array;
     }
-    uint64_t read_memory_dword(uint64_t address) const {
-        if (address & 0x7) throw MisalignedAddressException(address, 8);
-        return memory.getValue(address, cpu_array.at(active_hart)->cur_time());
-    };
-
-    uint32_t read_memory_word(uint64_t address) const {
-        if (address & 0x3) throw MisalignedAddressException(address, 4);
-        const uint64_t base_address = address & ~0x7ULL;
-        const uint64_t offset = address - base_address;
-        const uint64_t value = read_memory_dword(base_address);
-        return (value >> (offset * 8)) & 0xFFFFFFFF;
-    };
-
-    uint16_t read_memory_hword(uint64_t address) const {
-        if (address & 0x1) throw MisalignedAddressException(address, 2);
-        const uint64_t base_address = address & ~0x7ULL;
-        const uint64_t offset = address - base_address;
-        const uint64_t value = read_memory_dword(base_address);
-        return (value >> (offset * 8)) & 0xFFFF;
-    };
-
-    uint8_t read_memory_byte(uint64_t address) const {
-        const uint64_t base_address = address & ~0x7ULL;
-        const uint64_t offset = address - base_address;
-        const uint64_t value = read_memory_dword(base_address);
-        return (value >> (offset * 8)) & 0xFF;
-    };
     friend class DebugSessionFactory;
 };
 

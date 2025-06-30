@@ -80,7 +80,6 @@ namespace {
             ++cu_cnt;
             dwarf_srclines_dealloc_b(linecontext);
         }
-        std::cerr << "dwarf cu processed: " << cu_cnt << std::endl;
         return std::make_pair(line_addr_ret, addr_line_ret);
     }
 
@@ -168,11 +167,11 @@ namespace {
                     }
                     auto underlying = get_type_info(const_type_die, dbg, err);
                     ret.size = underlying.size;
-                    ret.name = "conts " + underlying.name;
+                    ret.name = "const " + underlying.name;
                     dwarf_dealloc(dbg, const_type_die, DW_DLA_DIE);
                 }
             } else {
-                std::cerr << "failed to read type attr\n";
+                throw DwarfException("failed to read type attr");
             }
             dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
         }
@@ -195,7 +194,8 @@ namespace {
             if (dwarf_global_formref(type_attr, &type_ref, &err) == DW_DLV_OK) {
                 Dwarf_Die type_die;
                 if (dwarf_offdie_b(dbg, type_ref, true, &type_die, &err) != DW_DLV_OK) {
-                    std::cerr << "failed to get type node\n";
+                    dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+                    throw DwarfException("failed to get type node");
                 }
                 try {
                     res = get_type_info(type_die, dbg, err);
@@ -392,10 +392,7 @@ void visit_die(
         }
     }
     if (tag == DW_TAG_variable || tag == DW_TAG_formal_parameter) {
-        if (!die_text) {
-            std::cerr << "TEXT_ERROR" << std::endl;
-        } else {
-            std::cerr << "die text: " << die_text << " tag: " << tag << std::endl;
+        if (die_text) {
             try {
                 auto type_info = read_type_attribute(d, dbg, err, tag);
                 name_to_typeinfo.emplace(die_text, type_info);
