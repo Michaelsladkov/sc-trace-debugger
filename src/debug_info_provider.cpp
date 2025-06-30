@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <vector>
 #include <libdwarf/dwarf.h>
+#include <sstream>
+#include <cstring>
 
 #include <iostream>
 
@@ -146,7 +148,6 @@ namespace {
     InternalTypeInfo get_type_info(Dwarf_Die type_die, Dwarf_Debug dbg, Dwarf_Error err) {
         Dwarf_Half type_tag;
         dwarf_tag(type_die, &type_tag, &err);
-        std::cerr << "Type tag: " << type_tag << std::endl;
         InternalTypeInfo ret;
         if (type_tag == DW_TAG_base_type) {
             ret.name = get_type_name(type_die, dbg, err);
@@ -179,6 +180,223 @@ namespace {
         return ret;
     }
 
+    using NameTagMap = std::unordered_map<std::string, uint16_t>;
+    using TagTypeInfoMap = std::unordered_map<uint16_t, InternalTypeInfo>;
+
+    void read_type_attribute(
+        Dwarf_Die var_die,
+        Dwarf_Debug dbg,
+        Dwarf_Error err,
+        Dwarf_Half tag,
+        TagTypeInfoMap tag_to_typeinfo
+        ) {
+        Dwarf_Attribute type_attr;
+        if (dwarf_attr(var_die, DW_AT_type, &type_attr, &err) == DW_DLV_OK) {
+            Dwarf_Off type_ref;
+            if (dwarf_global_formref(type_attr, &type_ref, &err) == DW_DLV_OK) {
+                Dwarf_Die type_die;
+                if (dwarf_offdie_b(dbg, type_ref, true, &type_die, &err) != DW_DLV_OK) {
+                    std::cerr << "failed to get type node\n";
+                }
+                try {
+                    auto info = get_type_info(type_die, dbg, err);
+                    tag_to_typeinfo.emplace(tag, std::move(info));
+                } catch (const DwarfException& e){
+                    // TODO: logging
+                }
+                dwarf_dealloc(dbg, type_die, DW_DLA_DIE);
+            }
+            dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
+        }
+    }
+
+    const uint8_t* decode_uleb128(const uint8_t* ptr, const uint8_t* end, Dwarf_Unsigned* val) {
+        *val = 0;
+        int shift = 0;
+        
+        while (ptr < end) {
+            uint8_t byte = *ptr++;
+            *val |= (byte & 0x7f) << shift;
+            shift += 7;
+            if ((byte & 0x80) == 0) break;
+        }
+        
+        return ptr;
+    }
+
+    const uint8_t* decode_sleb128(const uint8_t* ptr, const uint8_t* end, Dwarf_Signed* val) {
+        *val = 0;
+        int shift = 0;
+        uint8_t byte;
+        
+        do {
+            if (ptr >= end) break;
+            byte = *ptr++;
+            *val |= (byte & 0x7f) << shift;
+            shift += 7;
+        } while (byte & 0x80);
+        
+        if (shift < sizeof(*val) * 8 && (byte & 0x40)) {
+            *val |= -((Dwarf_Signed)1 << shift);
+        }
+        
+        return ptr;
+    }
+
+
+    void decode_location_expression(
+        Dwarf_Ptr expr_block, 
+        Dwarf_Unsigned expr_len,
+        bool verbose = true
+    ) {
+        std::ostringstream oss;
+        const uint8_t* ptr = static_cast<const uint8_t*>(expr_block);
+        const uint8_t* end = ptr + expr_len;
+        
+        while (ptr < end) {
+            uint8_t op = *ptr++;
+            
+            if (verbose) {
+                oss << "0x" << std::hex << static_cast<int>(op) << " ";
+            }
+
+            switch (op) {
+                // Базовые операции
+                case DW_OP_addr:
+                    if (ptr + sizeof(Dwarf_Addr) > end) break;
+                    oss << "DW_OP_addr(";
+                    if (verbose) {
+                        Dwarf_Addr addr;
+                        std::memcpy(&addr, ptr, sizeof(Dwarf_Addr));
+                        oss << "0x" << std::hex << addr;
+                    }
+                    oss << ")";
+                    ptr += sizeof(Dwarf_Addr);
+                    break;
+                    
+                case DW_OP_deref:
+                    oss << "DW_OP_deref";
+                    break;
+                    
+                case DW_OP_const1u:
+                    oss << "DW_OP_const1u(" << static_cast<int>(*ptr++) << ")";
+                    break;
+                    
+                case DW_OP_const1s:
+                    oss << "DW_OP_const1s(" << static_cast<int>(*ptr++) << ")";
+                    break;
+                    
+                case DW_OP_const2u: {
+                    uint16_t val;
+                    memcpy(&val, ptr, 2);
+                    oss << "DW_OP_const2u(" << val << ")";
+                    ptr += 2;
+                    break;
+                }
+                
+                // Операции с регистрами
+                case DW_OP_reg0: case DW_OP_reg1: case DW_OP_reg2: case DW_OP_reg3:
+                case DW_OP_reg4: case DW_OP_reg5: case DW_OP_reg6: case DW_OP_reg7:
+                case DW_OP_reg8: case DW_OP_reg9: case DW_OP_reg10: case DW_OP_reg11:
+                case DW_OP_reg12: case DW_OP_reg13: case DW_OP_reg14: case DW_OP_reg15:
+                case DW_OP_reg16: case DW_OP_reg17: case DW_OP_reg18: case DW_OP_reg19:
+                case DW_OP_reg20: case DW_OP_reg21: case DW_OP_reg22: case DW_OP_reg23:
+                case DW_OP_reg24: case DW_OP_reg25: case DW_OP_reg26: case DW_OP_reg27:
+                case DW_OP_reg28: case DW_OP_reg29: case DW_OP_reg30: case DW_OP_reg31:
+                    oss << "DW_OP_reg" << (op - DW_OP_reg0);
+                    break;
+                    
+                case DW_OP_regx: {
+                    Dwarf_Unsigned reg;
+                    ptr = decode_uleb128(ptr, end, &reg);
+                    oss << "DW_OP_regx(" << reg << ")";
+                    break;
+                }
+                
+                // Операции со стеком
+                case DW_OP_dup:
+                    oss << "DW_OP_dup";
+                    break;
+                    
+                case DW_OP_drop:
+                    oss << "DW_OP_drop";
+                    break;
+                    
+                case DW_OP_over:
+                    oss << "DW_OP_over";
+                    break;
+                    
+                // Арифметические операции
+                case DW_OP_plus:
+                    oss << "DW_OP_plus";
+                    break;
+                    
+                case DW_OP_minus:
+                    oss << "DW_OP_minus";
+                    break;
+                    
+                case DW_OP_mul:
+                    oss << "DW_OP_mul";
+                    break;
+                    
+                // Операции с frame base
+                case DW_OP_fbreg: {
+                    Dwarf_Signed offset;
+                    ptr = decode_sleb128(ptr, end, &offset);
+                    oss << "DW_OP_fbreg(" << offset << ")";
+                    break;
+                }
+                
+                // Специальные операции
+                case DW_OP_piece: {
+                    Dwarf_Unsigned size;
+                    ptr = decode_uleb128(ptr, end, &size);
+                    oss << "DW_OP_piece(" << size << ")";
+                    break;
+                }
+                
+                default:
+                    oss << "DW_OP_unknown(0x" << std::hex << static_cast<int>(op) << ")";
+                    break;
+            }
+            
+            if (ptr < end) oss << ", ";
+        }
+        
+        if (ptr != end) {
+            oss << "\n[WARNING: Incomplete expression decoding]";
+        }
+        std::cerr << oss.str() << std::endl;
+    }
+
+    void read_loc_attribute(
+        Dwarf_Die var_die,
+        Dwarf_Debug dbg,
+        Dwarf_Error err
+        ) {
+        Dwarf_Attribute loc_attr;
+        if (dwarf_attr(var_die, DW_AT_location, &loc_attr, &err) == DW_DLV_OK) {
+            Dwarf_Locdesc* locdescs = nullptr;
+            Dwarf_Signed locdesc_count = 0;
+            Dwarf_Half form;
+            dwarf_whatform(loc_attr, &form, &err);
+            if (form == DW_FORM_exprloc) {
+                Dwarf_Unsigned expr_len;
+                Dwarf_Ptr expr_block;
+                if (dwarf_formexprloc(loc_attr, &expr_len, &expr_block, &err) != DW_DLV_OK) {
+                    dwarf_dealloc(dbg, loc_attr, DW_DLA_ATTR);
+                    throw DwarfException("failed to get expression location");
+                }
+                decode_location_expression(expr_block, expr_len);
+            } else {
+                dwarf_dealloc(dbg, loc_attr, DW_DLA_ATTR);
+                throw DwarfException("Unsupported locspec");
+            }
+            dwarf_dealloc(dbg, loc_attr, DW_DLA_ATTR);
+        } else {
+            std::cerr << ("no location attribute for variable found\n");
+        }
+    }
 }
 
 DebugInfoProvider::DebugInfoProvider(const std::string& elf_path, const std::string& common_prefix) : elf_file_path(elf_path) {
@@ -239,9 +457,11 @@ const std::vector<uint64_t>& DebugInfoProvider::get_pc_by_line(const SourceLineS
     return res->second;
 }
 
-void visit_die(Dwarf_Die d, Dwarf_Debug dbg, Dwarf_Error err) {
+void visit_die(Dwarf_Die d, Dwarf_Debug dbg, Dwarf_Error err, NameTagMap& name_to_typetag, TagTypeInfoMap& tag_to_typeinfo) {
     char *die_text;
-    dwarf_diename(d, &die_text, &err);
+    if (dwarf_diename(d, &die_text, &err) != DW_DLV_OK) {
+        die_text = nullptr;
+    }
     Dwarf_Half tag;
     if (dwarf_tag(d, &tag, &err) != DW_DLV_OK) {
         return;
@@ -251,32 +471,25 @@ void visit_die(Dwarf_Die d, Dwarf_Debug dbg, Dwarf_Error err) {
             std::cerr << "TEXT_ERROR" << std::endl;
         } else {
             std::cerr << "die text: " << die_text << " tag: " << tag << std::endl;
+            name_to_typetag.emplace(die_text, tag);
         }
-        Dwarf_Attribute type_attr;
-        if (dwarf_attr(d, DW_AT_type, &type_attr, &err) == DW_DLV_OK) {
-            Dwarf_Off type_ref;
-            if (dwarf_global_formref(type_attr, &type_ref, &err) == DW_DLV_OK) {
-                Dwarf_Die type_die;
-                if (dwarf_offdie_b(dbg, type_ref, true, &type_die, &err) != DW_DLV_OK) {
-                    std::cerr << "failed to get type node\n";
-                }
-                get_type_info(type_die, dbg, err);
-                dwarf_dealloc(dbg, type_die, DW_DLA_DIE);
-            }
-            dwarf_dealloc(dbg, type_attr, DW_DLA_ATTR);
-        }
+        read_type_attribute(d, dbg, err, tag, tag_to_typeinfo);
+        read_loc_attribute(d, dbg, err);
     }
+    dwarf_dealloc(dbg, die_text, DW_DLA_STRING);
 
     Dwarf_Die next;
     if (dwarf_child(d, &next, &err) != DW_DLV_OK) {
         return;
     }
-    visit_die(next, dbg, err);
+    visit_die(next, dbg, err, name_to_typetag, tag_to_typeinfo);
     Dwarf_Die sib;
     while(dwarf_siblingof_b(dbg, next, true, &sib, &err) == DW_DLV_OK) {
-        visit_die(sib, dbg, err);
+        dwarf_dealloc(dbg, next, DW_DLA_DIE);
+        visit_die(sib, dbg, err, name_to_typetag, tag_to_typeinfo);
         next = sib;
     }
+    dwarf_dealloc(dbg, sib, DW_DLA_DIE);
 }
 
 std::vector<VariableInfo> DebugInfoProvider::get_available_variables(uint64_t pc) const {
@@ -294,6 +507,8 @@ std::vector<VariableInfo> DebugInfoProvider::get_available_variables(uint64_t pc
     Dwarf_Unsigned  next_cu_header_offset;
     Dwarf_Half      header_cu_type;
     size_t cu_cnt = 0;
+    NameTagMap name_to_tag_map;
+    TagTypeInfoMap tag_typeinfo_map;
     while (dwarf_next_cu_header_d(dbg, is_info, &cu_header_length, 
                                   &version_stamp, &abbrev_offset, 
                                   &address_size, &length_size,
@@ -305,9 +520,10 @@ std::vector<VariableInfo> DebugInfoProvider::get_available_variables(uint64_t pc
         if (dwarf_siblingof_b(dbg, nullptr, is_info, &cu_die, &err) != DW_DLV_OK) {
             continue;
         }
-        visit_die(cu_die, dbg, err);
+        visit_die(cu_die, dbg, err, name_to_tag_map, tag_typeinfo_map);
         ++cu_cnt;
     }
+
     std::cerr << "processed cu num: " << cu_cnt << std::endl;
     return res;
 }
