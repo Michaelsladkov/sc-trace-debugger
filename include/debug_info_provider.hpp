@@ -63,18 +63,14 @@ enum class LocationType {
 
 struct VariableLocation {
     LocationType type;
-    union {
-        Dwarf_Addr address;
-        Dwarf_Unsigned reg_num;
-        Dwarf_Signed offset;
-    };
+    int64_t value;
 };
 
 struct VariableInfo {
     std::string name;
     std::string type_name;
     VariableLocation location;
-    Dwarf_Unsigned size;
+    ssize_t size;
 };
 
 inline std::ostream& operator<<(std::ostream& stream, const SourceLineSpec& l) {
